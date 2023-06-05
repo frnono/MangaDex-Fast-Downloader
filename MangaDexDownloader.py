@@ -10,12 +10,13 @@ from io import BytesIO
 from tkinter import *
 from tkinter.filedialog import askdirectory
 import customtkinter
-import time
 import os
 import ctypes
 import multiprocessing
-from threading import Thread, Lock
 from concurrent.futures import ThreadPoolExecutor
+import re
+import zipfile
+import glob
 
 
 myappid = 'frnono.manga.downloader'
@@ -28,6 +29,9 @@ customtkinter.set_default_color_theme("Theme/pink.json")
 print("Short instructions\n")
 print("For batch download, insert the manga id in the field, then press batch")
 print("To download a single chapter, insert the chapter id in the field, then press go\n")
+print("PDF(fast) is a lot faster, as the name implies. Highly recommended")
+print("PDF(slow) this is pretty much useless, in some rare cases it looks better (a LOT slower)")
+print("CBZ well, the name says it\n")
 
 path = f"{os.environ['UserProfile']}/Downloads/"
 mangadex_api = r"https://api.mangadex.org/at-home/server/"
@@ -44,8 +48,6 @@ def ChangeDirec():
 def get_chap_id():
     global chapter_id, mangadex_api, link
 
-    os.system("cls")
-
     link = entry.get()
     chapter_id = link
     UrlToImg()
@@ -53,12 +55,11 @@ def get_chap_id():
 def batchUrlToImg():   
     global chapter_id, mangadex_api
 
-    os.system("cls")
-
     link = entry.get()
     manga_id = link
     chapter_list = get_chapter_list(manga_id)
     for i in range(len(chapter_list)): 
+        os.system("cls")
         print(str(i + 1) + " / " + str(len(chapter_list)))   
         chapter_id = chapter_list[i]
         UrlToImg()
@@ -83,7 +84,7 @@ def UrlToImg():
         chapter_data = data_json.get('chapter', {}).get('data', [])
         chapter_dataSaver = data_json.get('chapter', {}).get('dataSaver', [])
 
-        image_folder = os.path.join(path, str(manga_title), "Chapter " + str(chapter_num) + " Raw Images")
+        image_folder = os.path.join(path, str(manga_title), "Images", "Chapter " + str(chapter_num) + " Raw Images")
         os.makedirs(image_folder, exist_ok=True)
 
         with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
@@ -105,11 +106,25 @@ def UrlToImg():
             for download_task in download_tasks:
                 download_task.result()
 
-            if file_PDF.get() == 1:
-                output_pdf_path = os.path.join(path, str(manga_title) + "/Chapter " + str(chapter_num) + " - " + str(manga_title) + ".pdf")
-                convert_images_to_pdf(image_folder, output_pdf_path, chapter_title, chapter_num)
+            if file_PDF_fast.get() == 1:
+                output_folder = os.path.join(path, str(manga_title), "PDF (Fast)")
+                os.makedirs(output_folder, exist_ok=True)
+                output_pdf_path = os.path.join(output_folder, f"Chapter {chapter_num} - {manga_title}.pdf")
+                convert_images_to_pdf_fast(image_folder, output_pdf_path, chapter_title, chapter_num)
 
-        os.system("cls")
+            if file_PDF_slow.get() == 1:
+                output_folder = os.path.join(path, str(manga_title), "PDF (Slow)")
+                os.makedirs(output_folder, exist_ok=True)
+                output_pdf_path = os.path.join(output_folder, f"Chapter {chapter_num} - {manga_title}.pdf")
+                convert_images_to_pdf_slow(image_folder, output_pdf_path, chapter_title, chapter_num)
+
+            if file_CBZ.get() == 1:
+                output_folder = os.path.join(path, str(manga_title), "CBZ")
+                os.makedirs(output_folder, exist_ok=True)
+
+                output_cbz_path = os.path.join(output_folder, f"Chapter {chapter_num} - {manga_title}.cbz")
+                convert_images_to_cbz(image_folder, output_cbz_path, chapter_title, chapter_num)
+        print("Finished!")
         app.title("Finished!")
 
     except Exception as e:
@@ -212,12 +227,48 @@ def get_chapter_list(manga_id, limit=500, offset=0, translatedLanguage="en", con
 
     return chapter_list
       
-def convert_images_to_pdf(folder_path, output_path, chapter_title, chatpter_num):
+def convert_images_to_pdf_fast(folder_path, output_path, chapter_title, chapter_num):
 
-    print("Creating pdf...")
-    app.title("Creating pdf...")
+    print("Creating pdf (fast)...")
+    app.title("Creating pdf (fast)...")
+    
+    image_files = [f for f in os.listdir(folder_path) if f.endswith(('.png', '.jpg', '.jpeg'))]
+
+    image_files.sort(key=lambda x: int(re.findall(r'\d+', x)[0]))
+
+    if chapter_title:
+        ctitle=f"{chapter_title} - Chapter {chapter_num}"
+    else:
+        ctitle=f"{chapter_num}"
+
+    images = []
+    for image_file in image_files:
+        image_path = os.path.join(folder_path, image_file)
+        img = PIL.Image.open(image_path)
+
+        img.thumbnail((img.width, img.height))
+        images.append(img)
+
+    images[0].save(
+        output_path,
+        "PDF",
+        resolution =100,
+        save_all=True,
+        append_images=images[1:],
+        compress_level=0,
+        title=ctitle
+    )
+
+    print(f"PDF created successfully at: {output_path}")
+
+def convert_images_to_pdf_slow(folder_path, output_path, chapter_title, chatpter_num):
+
+    print("Creating pdf (slow)...")
+    app.title("Creating pdf (slow)...")
 
     image_files = [f for f in os.listdir(folder_path) if f.endswith(('.png', '.jpg', '.jpeg'))]
+
+    image_files.sort(key=lambda x: int(re.findall(r'\d+', x)[0]))
 
     c = canvas.Canvas(output_path, pagesize=letter)
 
@@ -225,7 +276,7 @@ def convert_images_to_pdf(folder_path, output_path, chapter_title, chatpter_num)
         image_path = os.path.join(folder_path, image_file)
         img = PIL.Image.open(image_path)
 
-        if file_PDF.get() == 1:
+        if file_PDF_slow.get() == 1:
             aspect_ratio = img.width / float(img.height)
 
             width = letter[0]
@@ -243,30 +294,49 @@ def convert_images_to_pdf(folder_path, output_path, chapter_title, chatpter_num)
 
     print(f"PDF created successfully at: {output_path}")
 
+def convert_images_to_cbz(folder_path, output_path, chapter_title, chapter_num):
+    print("Creating CBZ...")
+    app.title("Creating CBZ...")
+
+    image_files = [f for f in glob.glob(os.path.join(folder_path, '*.png'))] + \
+                  [f for f in glob.glob(os.path.join(folder_path, '*.jpg'))] + \
+                  [f for f in glob.glob(os.path.join(folder_path, '*.jpeg'))]
+
+    with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as cbz_file:
+        for image_file in image_files:
+            cbz_file.write(image_file, os.path.basename(image_file))
+
+    print(f"CBZ created successfully at: {output_path}")
+
 app = customtkinter.CTk()
 app.title(path)
 app.resizable(width=False, height=False)
-app.geometry(f"{720}x{200}")
+app.geometry(f"{600}x{200}")
 app.iconbitmap("Icon/nerd.ico")
 
-app.grid_columnconfigure(1, weight=1)
-app.grid_columnconfigure((2, 3), weight=0)
-app.grid_rowconfigure((0, 1, 2), weight=0)
+app.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
+app.grid_rowconfigure((0, 1, 2, 3, 4), weight=1)
 
-file_PDF = customtkinter.CTkSwitch(app, text="PDF", progress_color=("#ffed9c"))
-file_PDF.grid(row=0, column=1, columnspan=1, padx=(20, 0), pady=(20, 20), sticky="nw")
+file_PDF_fast = customtkinter.CTkSwitch(app, text="PDF (fast)", progress_color=("#ffed9c"))
+file_PDF_fast.grid(row=0, column=0, columnspan=1, padx=(10, 0), pady=(10, 0), sticky="nw")
+
+file_PDF_slow = customtkinter.CTkSwitch(app, text="PDF (slow)", progress_color=("#ffed9c"))
+file_PDF_slow.grid(row=0, column=1, columnspan=1, padx=(10, 0), pady=(10, 0), sticky="nw")
+
+file_CBZ = customtkinter.CTkSwitch(app, text="CBZ", progress_color=("#ffed9c"))
+file_CBZ.grid(row=0, column=2, columnspan=1, padx=(10, 0), pady=(10, 0), sticky="nw")
 
 entry = customtkinter.CTkEntry(app, placeholder_text="Enter manga/chapter id...")
-entry.grid(row=3, column=1, columnspan=2, padx=(20, 0), pady=(20, 20), sticky="nsew")
+entry.grid(row=3, column=0, columnspan=3, padx=(20, 0), pady=(0, 20), sticky="swe")
 
 main_button_1 = customtkinter.CTkButton(master=app, text="Change Directory", fg_color="transparent", hover_color=("#242323"), border_width=2, command=ChangeDirec)
-main_button_1.grid(row=0, column=3, padx=(20, 20), pady=(20, 20), sticky="nsew")
+main_button_1.grid(row=0, column=3, padx=(20, 0), pady=(10, 20), sticky="n")
 
 main_button_2 = customtkinter.CTkButton(master=app, fg_color="transparent", text="Go!", hover_color=("#242323"), border_width=2, command=get_chap_id)
-main_button_2.grid(row=3, column=3, padx=(20, 20), pady=(20, 20), sticky="nsew")
+main_button_2.grid(row=3, column=3, padx=(20, 20), pady=(0, 20), sticky="se")
 
 main_button_3 = customtkinter.CTkButton(master=app, fg_color="transparent", text="Batch", hover_color=("#242323"), border_width=2, command=batchUrlToImg)
-main_button_3.grid(row=2, column=3, padx=(20, 20), pady=(20, 20), sticky="nsew")
+main_button_3.grid(row=2, column=3, padx=(20, 20), pady=(0, 20), sticky="se")
 
 # RUN APP
 app.mainloop()
