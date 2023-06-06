@@ -18,7 +18,6 @@ import re
 import zipfile
 import glob
 
-
 myappid = 'frnono.manga.downloader'
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
@@ -28,10 +27,15 @@ customtkinter.set_appearance_mode("System")
 customtkinter.set_default_color_theme("Theme/pink.json") 
 print("Short instructions\n")
 print("For batch download, insert the manga id in the field, then press batch")
+print("You can write the chapters where you want it to start and end")
+print("If you input nothing or something invalid, it will download everything")
 print("To download a single chapter, insert the chapter id in the field, then press go\n")
-print("PDF(fast) is a lot faster, as the name implies. Highly recommended")
-print("PDF(slow) this is pretty much useless, in some rare cases it looks better (a LOT slower)")
-print("CBZ well, the name says it\n")
+
+print(f"Ex: https://mangadex.org/title/ ---> e7eabe96-aa17-476f-b431-2497d5e9d060 <--- /black-clover\n")
+
+print("PDF(fast) is a lot faster, as the name implies. If you want the PDF format, use this option")
+print("PDF(slow) is pretty much useless, in some rare cases it looks better (a LOT slower)")
+print("CBZ is probably the ideal format if you have a dedicated reader\n")
 
 path = f"{os.environ['UserProfile']}/Downloads/"
 mangadex_api = r"https://api.mangadex.org/at-home/server/"
@@ -45,6 +49,19 @@ def ChangeDirec():
         path = f"{os.environ['UserProfile']}/Downloads/"
     app.title(path)
 
+def get_start_end():
+    try:
+        start_chapter = int(entry_start.get())
+    except:
+        start_chapter = None
+
+    try:
+        end_chapter = int(entry_end.get())
+    except:
+        end_chapter = None
+
+    return start_chapter, end_chapter
+
 def get_chap_id():
     global chapter_id, mangadex_api, link
 
@@ -55,9 +72,11 @@ def get_chap_id():
 def batchUrlToImg():   
     global chapter_id, mangadex_api
 
+    start_chapter, end_chapter = get_start_end()
+
     link = entry.get()
     manga_id = link
-    chapter_list = get_chapter_list(manga_id)
+    chapter_list = get_chapter_list(manga_id, start_chapter, end_chapter)
     for i in range(len(chapter_list)): 
         os.system("cls")
         print(str(i + 1) + " / " + str(len(chapter_list)))   
@@ -84,7 +103,10 @@ def UrlToImg():
         chapter_data = data_json.get('chapter', {}).get('data', [])
         chapter_dataSaver = data_json.get('chapter', {}).get('dataSaver', [])
 
-        image_folder = os.path.join(path, str(manga_title), "Images", "Chapter " + str(chapter_num) + " Raw Images")
+        if chapter_title:
+            image_folder = os.path.join(path, str(manga_title), "Images", "Chapter " + str(chapter_num) + " - " + str(chapter_title))
+        else:
+            image_folder = os.path.join(path, str(manga_title), "Images", "Chapter " + str(chapter_num))
         os.makedirs(image_folder, exist_ok=True)
 
         with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
@@ -94,7 +116,8 @@ def UrlToImg():
             app.title("Loading images...")
             for i, image_name in enumerate(chapter_data):
                 linkimg = str(baseUrl) + "/data/" + str(chapter_hash) + "/" + str(image_name)
-                image_path = os.path.join(image_folder, image_name)
+                output_name = f"Page_{i+1}.png"
+                image_path = os.path.join(image_folder, output_name)
 
                 # Download the image
                 download_task = executor.submit(download_image, linkimg, image_path)
@@ -109,26 +132,42 @@ def UrlToImg():
             if file_PDF_fast.get() == 1:
                 output_folder = os.path.join(path, str(manga_title), "PDF (Fast)")
                 os.makedirs(output_folder, exist_ok=True)
-                output_pdf_path = os.path.join(output_folder, f"Chapter {chapter_num} - {manga_title}.pdf")
+
+                if chapter_title:
+                    output_pdf_path = os.path.join(output_folder, f"Chapter {chapter_num} - {chapter_title}.pdf")
+                else:
+                    output_pdf_path = os.path.join(output_folder, f"Chapter {chapter_num}.pdf")
+
                 convert_images_to_pdf_fast(image_folder, output_pdf_path, chapter_title, chapter_num)
 
             if file_PDF_slow.get() == 1:
                 output_folder = os.path.join(path, str(manga_title), "PDF (Slow)")
                 os.makedirs(output_folder, exist_ok=True)
-                output_pdf_path = os.path.join(output_folder, f"Chapter {chapter_num} - {manga_title}.pdf")
+
+                if chapter_title:
+                    output_pdf_path = os.path.join(output_folder, f"Chapter {chapter_num} - {chapter_title}.pdf")
+                else:
+                    output_pdf_path = os.path.join(output_folder, f"Chapter {chapter_num}.pdf")
+
                 convert_images_to_pdf_slow(image_folder, output_pdf_path, chapter_title, chapter_num)
 
             if file_CBZ.get() == 1:
                 output_folder = os.path.join(path, str(manga_title), "CBZ")
                 os.makedirs(output_folder, exist_ok=True)
 
-                output_cbz_path = os.path.join(output_folder, f"Chapter {chapter_num} - {manga_title}.cbz")
+                if chapter_title:
+                    output_cbz_path = os.path.join(output_folder, f"Chapter {chapter_num} - {chapter_title}.cbz")
+                else:
+                    output_cbz_path = os.path.join(output_folder, f"Chapter {chapter_num}.cbz")
+
                 convert_images_to_cbz(image_folder, output_cbz_path, chapter_title, chapter_num)
+                
+        os.system("cls")
         print("Finished!")
         app.title("Finished!")
 
     except Exception as e:
-        print("Error:", e)
+        print(f"Error:", e)
 
 def get_manga_title_from_chapter(chapter_id):
     chapter_url = f"https://api.mangadex.org/chapter/{chapter_id}"
@@ -172,7 +211,8 @@ def get_manga_title(manga_id):
         print(f"Error: {response.status_code}")
         return None
     
-def get_chapter_list(manga_id, limit=500, offset=0, translatedLanguage="en", contentRating=["safe", "suggestive", "erotica", "pornographic"]):
+def get_chapter_list(manga_id, start_chapter, end_chapter, limit=500, offset=0, translatedLanguage="en", contentRating=["safe", "suggestive", "erotica", "pornographic"]):
+    
     chapter_list = []
 
     url = f"https://api.mangadex.org/manga/{manga_id}/feed"
@@ -200,8 +240,14 @@ def get_chapter_list(manga_id, limit=500, offset=0, translatedLanguage="en", con
                 chapter_id = chapter_data.get("id")
                 chapter_num = chapter_data.get("attributes", {}).get("chapter")
 
-                # Skip chapter if the same chapter_num has already been seen
+                # Skip chapter if the same chapter_num has already been seen or not within the range
                 if chapter_num in seen_chapters:
+                    continue
+                
+                if start_chapter is not None and float(chapter_num) < start_chapter:
+                    continue
+
+                if end_chapter is not None and float(chapter_num) > end_chapter:
                     continue
 
                 chapter_list.append((chapter_id, chapter_num))
@@ -259,8 +305,6 @@ def convert_images_to_pdf_fast(folder_path, output_path, chapter_title, chapter_
         title=ctitle
     )
 
-    print(f"PDF created successfully at: {output_path}")
-
 def convert_images_to_pdf_slow(folder_path, output_path, chapter_title, chatpter_num):
 
     print("Creating pdf (slow)...")
@@ -292,8 +336,6 @@ def convert_images_to_pdf_slow(folder_path, output_path, chapter_title, chatpter
         c.setTitle(chatpter_num)
     c.save()
 
-    print(f"PDF created successfully at: {output_path}")
-
 def convert_images_to_cbz(folder_path, output_path, chapter_title, chapter_num):
     print("Creating CBZ...")
     app.title("Creating CBZ...")
@@ -306,8 +348,7 @@ def convert_images_to_cbz(folder_path, output_path, chapter_title, chapter_num):
         for image_file in image_files:
             cbz_file.write(image_file, os.path.basename(image_file))
 
-    print(f"CBZ created successfully at: {output_path}")
-
+# Gui section
 app = customtkinter.CTk()
 app.title(path)
 app.resizable(width=False, height=False)
@@ -327,16 +368,22 @@ file_CBZ = customtkinter.CTkSwitch(app, text="CBZ", progress_color=("#ffed9c"))
 file_CBZ.grid(row=0, column=2, columnspan=1, padx=(10, 0), pady=(10, 0), sticky="nw")
 
 entry = customtkinter.CTkEntry(app, placeholder_text="Enter manga/chapter id...")
-entry.grid(row=3, column=0, columnspan=3, padx=(20, 0), pady=(0, 20), sticky="swe")
+entry.grid(row=3, column=0, columnspan=3, padx=(10, 0), pady=(0, 0), sticky="swe")
+
+entry_start = customtkinter.CTkEntry(app, placeholder_text="Start Chapter")
+entry_start.grid(row=2, column=0, columnspan=1, padx=(10, 0), pady=(0, 20), sticky="sw")
+
+entry_end = customtkinter.CTkEntry(app, placeholder_text="End Chapter")
+entry_end.grid(row=2, column=1, columnspan=1, padx=(10, 0), pady=(0, 20), sticky="sw")
 
 main_button_1 = customtkinter.CTkButton(master=app, text="Change Directory", fg_color="transparent", hover_color=("#242323"), border_width=2, command=ChangeDirec)
-main_button_1.grid(row=0, column=3, padx=(20, 0), pady=(10, 20), sticky="n")
+main_button_1.grid(row=0, column=3, padx=(20, 10), pady=(10, 20), sticky="n")
 
 main_button_2 = customtkinter.CTkButton(master=app, fg_color="transparent", text="Go!", hover_color=("#242323"), border_width=2, command=get_chap_id)
-main_button_2.grid(row=3, column=3, padx=(20, 20), pady=(0, 20), sticky="se")
+main_button_2.grid(row=3, column=3, padx=(20, 10), pady=(0, 0), sticky="se")
 
 main_button_3 = customtkinter.CTkButton(master=app, fg_color="transparent", text="Batch", hover_color=("#242323"), border_width=2, command=batchUrlToImg)
-main_button_3.grid(row=2, column=3, padx=(20, 20), pady=(0, 20), sticky="se")
+main_button_3.grid(row=2, column=3, padx=(20, 10), pady=(0, 20), sticky="se")
 
 # RUN APP
 app.mainloop()
