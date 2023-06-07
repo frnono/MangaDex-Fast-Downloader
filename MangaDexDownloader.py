@@ -83,8 +83,6 @@ def batchUrlToImg():
     link = entry.get()
     manga_id = link
     chapter_list = get_chapter_list(manga_id, start_chapter, end_chapter)
-    for i in range(len(chapter_list)):
-        print(i, " - ", chapter_list[i])
     for i in range(len(chapter_list)): 
         os.system("cls")
         print(str(i + 1) + " / " + str(len(chapter_list)))   
@@ -240,7 +238,7 @@ def get_chapter_list(manga_id, start_chapter, end_chapter, limit=500, offset=0, 
         "limit": limit,
         "offset": offset,
         "translatedLanguage[]": translatedLanguage,
-        "contentRating[]": contentRating,
+        "contentRating[]": contentRating
     }
 
     seen_chapters = set()  # Keep track of seen chapter_num values
