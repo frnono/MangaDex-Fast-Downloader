@@ -8,6 +8,7 @@ import json
 import ssl
 from io import BytesIO
 from tkinter import *
+from tkinter import messagebox
 from tkinter.filedialog import askdirectory
 import customtkinter
 import os
@@ -41,6 +42,11 @@ path = f"{os.environ['UserProfile']}/Downloads/"
 mangadex_api = r"https://api.mangadex.org/at-home/server/"
 chapter_id = ""
 link = ""
+
+def remove_invalid(name):
+    invalid_chars = r'[\\/:*?"<>|]'
+    valid = re.sub(invalid_chars, '', name)
+    return valid
 
 def ChangeDirec():
     global path
@@ -77,11 +83,14 @@ def batchUrlToImg():
     link = entry.get()
     manga_id = link
     chapter_list = get_chapter_list(manga_id, start_chapter, end_chapter)
+    for i in range(len(chapter_list)):
+        print(i, " - ", chapter_list[i])
     for i in range(len(chapter_list)): 
         os.system("cls")
         print(str(i + 1) + " / " + str(len(chapter_list)))   
         chapter_id = chapter_list[i]
         UrlToImg()
+    messagebox.showinfo("Finished!", "All chapters have been processed.")
 
 def download_image(url, image_path):
     response = requests.get(url)
@@ -176,16 +185,23 @@ def get_manga_title_from_chapter(chapter_id):
     }
 
     response = requests.get(chapter_url, headers=headers)
-
+    
     if response.status_code == 200:
         data = response.json()
         for relationship in data["data"]["relationships"]:
             if relationship["type"] == "manga":
                 manga_id = relationship["id"]
                 break
+
         manga_title = get_manga_title(manga_id)
         chapter_title = data["data"]["attributes"]["title"]
         chapter_num = data["data"]["attributes"]["chapter"]
+        if manga_title:
+            manga_title = remove_invalid(manga_title)
+
+        if chapter_title:
+            chapter_title = remove_invalid(chapter_title)
+
         return manga_title, chapter_title, chapter_num
     else:
         print(f"Error: {response.status_code}")
@@ -211,7 +227,8 @@ def get_manga_title(manga_id):
         print(f"Error: {response.status_code}")
         return None
     
-def get_chapter_list(manga_id, start_chapter, end_chapter, limit=500, offset=0, translatedLanguage="en", contentRating=["safe", "suggestive", "erotica", "pornographic"]):
+def get_chapter_list(manga_id, start_chapter, end_chapter, limit=500, offset=0, translatedLanguage="en", 
+                     contentRating=["safe", "suggestive", "erotica", "pornographic"]):
     
     chapter_list = []
 
@@ -223,7 +240,7 @@ def get_chapter_list(manga_id, start_chapter, end_chapter, limit=500, offset=0, 
         "limit": limit,
         "offset": offset,
         "translatedLanguage[]": translatedLanguage,
-        "contentRating[]": contentRating
+        "contentRating[]": contentRating,
     }
 
     seen_chapters = set()  # Keep track of seen chapter_num values
@@ -239,6 +256,7 @@ def get_chapter_list(manga_id, start_chapter, end_chapter, limit=500, offset=0, 
             for chapter_data in chapters_data:
                 chapter_id = chapter_data.get("id")
                 chapter_num = chapter_data.get("attributes", {}).get("chapter")
+                external_chapter = chapter_data.get("attributes", {}).get("externalUrl")
 
                 # Skip chapter if the same chapter_num has already been seen or not within the range
                 if chapter_num in seen_chapters:
@@ -249,9 +267,10 @@ def get_chapter_list(manga_id, start_chapter, end_chapter, limit=500, offset=0, 
 
                 if end_chapter is not None and float(chapter_num) > end_chapter:
                     continue
-
-                chapter_list.append((chapter_id, chapter_num))
-                seen_chapters.add(chapter_num)
+                
+                if external_chapter is None:
+                    chapter_list.append((chapter_id, chapter_num))
+                    seen_chapters.add(chapter_num)
 
             # Check if there are more pages to fetch
             next_page = data.get("links", {}).get("next")
