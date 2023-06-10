@@ -143,10 +143,12 @@ def UrlToImg():
                 download_tasks.append(download_task)
 
             # Wait for all download tasks to complete
-            print("Downloading images...")
+            print("Downloading images...\n")
             app.title("Downloading images...")
-            for download_task in download_tasks:
+            for i, download_task in enumerate(download_tasks):
                 download_task.result()
+                print ("\033[A                             \033[A")
+                print (i+1, " / ", len(download_tasks))
 
             if file_PDF_fast.get() == 1:
                 output_folder = os.path.join(path, str(manga_title), "PDF (Fast)")
