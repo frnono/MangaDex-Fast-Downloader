@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 import re
 import zipfile
 import glob
+from ratelimit import limits, sleep_and_retry
 
 myappid = 'frnono.manga.downloader'
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
@@ -42,6 +43,12 @@ path = f"{os.environ['UserProfile']}/Downloads/"
 mangadex_api = r"https://api.mangadex.org/at-home/server/"
 chapter_id = ""
 link = ""
+
+@sleep_and_retry
+@limits(calls=5, period=1)
+def make_request(url, headers, params):
+    response = requests.get(url, headers=headers, params=params)
+    return response
 
 def remove_invalid(name):
     invalid_chars = r'[\\/:*?"<>|]'
@@ -91,7 +98,11 @@ def batchUrlToImg():
     messagebox.showinfo("Finished!", "All chapters have been processed.")
 
 def download_image(url, image_path):
-    response = requests.get(url)
+    headers = {
+    }
+    params = {
+    }
+    response = make_request(url, headers=headers, params=params)
     with open(image_path, 'wb') as f:
         f.write(response.content)
 
@@ -111,6 +122,7 @@ def UrlToImg():
         chapter_dataSaver = data_json.get('chapter', {}).get('dataSaver', [])
 
         if chapter_title:
+            chapter_title = re.sub(r'\.', '', chapter_title)
             image_folder = os.path.join(path, str(manga_title), "Images", "Chapter " + str(chapter_num) + " - " + str(chapter_title))
         else:
             image_folder = os.path.join(path, str(manga_title), "Images", "Chapter " + str(chapter_num))
@@ -169,7 +181,7 @@ def UrlToImg():
 
                 convert_images_to_cbz(image_folder, output_cbz_path, chapter_title, chapter_num)
                 
-        os.system("cls")
+       
         print("Finished!")
         app.title("Finished!")
 
@@ -181,8 +193,10 @@ def get_manga_title_from_chapter(chapter_id):
     headers = {
         "Accept": "application/vnd.api+json",
     }
+    params = {
+    }
 
-    response = requests.get(chapter_url, headers=headers)
+    response  = make_request(chapter_url, headers=headers, params=params)
     
     if response.status_code == 200:
         data = response.json()
@@ -210,8 +224,10 @@ def get_manga_title(manga_id):
     headers = {
         "Accept": "application/vnd.api+json",
     }
+    params = {
+    }
 
-    response = requests.get(manga_url, headers=headers)
+    response  = make_request(manga_url, headers=headers, params=params)
 
     if response.status_code == 200:
         data = response.json()
@@ -244,7 +260,7 @@ def get_chapter_list(manga_id, start_chapter, end_chapter, limit=500, offset=0, 
     seen_chapters = set()  # Keep track of seen chapter_num values
 
     while url:
-        response = requests.get(url, headers=headers, params=params)
+        response  = make_request(url, headers=headers, params=params)
 
         if response.status_code == 200:
             data = response.json()
